@@ -21,6 +21,7 @@ from instagrapi.exceptions import (
     PrivateError,
     ReloginAttemptExceeded,
     TwoFactorRequired,
+    ChallengeRequired
 )
 from instagrapi.utils import dumps, gen_token, generate_jazoest
 
@@ -183,9 +184,72 @@ class PostLoginFlowMixin:
         check_flow = []
         # chance = random.randint(1, 100) % 2 == 0
         # reason = "pull_to_refresh" if chance else "cold_start"
-        check_flow.append(self.get_reels_tray_feed("cold_start"))
+        try:
+            check_flow.append(self.get_reels_tray_feed("cold_start"))
+        except ChallengeRequired:
+            if not self.cap_guru_api_key:
+                raise("Couldn't solve captcha because key is not available.")
+            self.solve_recaptcha()
+            check_flow.append(self.get_reels_tray_feed("cold_start"))
+        except Exception as e:
+            raise(e)
         check_flow.append(self.get_timeline_feed(["cold_start_fetch"]))
         return all(check_flow)
+
+    def solve_recaptcha(self):
+
+        '''< GETTING AND SOLVING CAPTCHA'''
+        cap_guru_api_endpoint = 'http://api2.cap.guru'
+
+        cap_guru_key = self.cap_guru_api_key
+        sitekey = '6LdktRgnAAAAAFQ6icovYI2-masYLFjEFyzQzpix'
+
+        params = {
+            'key': cap_guru_key,
+            'method': 'userrecaptcha',
+            'googlekey': sitekey,
+            'pageurl': 'https://www.fbsbx.com/captcha/recaptcha/iframe/',
+            'json': 1
+        }
+
+        r = requests.get(f'{cap_guru_api_endpoint}/in.php', params=params)
+
+        print(r.text)
+
+        cap_id = r.json()['request']
+
+        params = {
+            'key': cap_guru_key,
+            'action': 'get',
+            'id': cap_id,
+            'json': 1
+        }
+
+        r = requests.get(f'{cap_guru_api_endpoint}/res.php', params=params)
+
+        i=1
+        while r.json()['request'] == 'CAPCHA_NOT_READY':
+            r = requests.get(f'{cap_guru_api_endpoint}/res.php', params=params)
+            print(i)
+            print(r.text)
+            time.sleep(5)
+            i+=1
+
+        print(r.text)
+
+        g_recaptcha_response = r.json()['request']
+
+        '''GETTING AND SOLVING CAPTCHA >'''
+
+        payload = {
+            "g-recaptcha-response": g_recaptcha_response,
+            "next": '/api/v1/zr/dual_tokens/'
+        }
+
+        resp = self.private_request('challenge/web/action/', payload)
+
+        print(resp)
+
 
     def get_timeline_feed(
         self, reason: TIMELINE_FEED_REASON = "pull_to_refresh", max_id: str = None
@@ -437,6 +501,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
             "google_tokens": "[]",
             "login_attempt_count": "0",
         }
+        print(data)
         try:
             logged = self.private_request("accounts/login/", data, login=True)
             self.authorization_data = self.parse_authorization(
