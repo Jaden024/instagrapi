@@ -96,6 +96,7 @@ class Client(
         self,
         settings: dict = {},
         proxy: str = None,
+        cap_guru_api_key: str = None,
         delay_range: list = None,
         logger=DEFAULT_LOGGER,
         **kwargs,
@@ -106,6 +107,7 @@ class Client(
         self.settings = settings
         self.logger = logger
         self.delay_range = delay_range
+        self.cap_guru_api_key = cap_guru_api_key
 
         self.set_proxy(proxy)
 
