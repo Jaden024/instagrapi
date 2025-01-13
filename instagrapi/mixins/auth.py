@@ -501,7 +501,6 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
             "google_tokens": "[]",
             "login_attempt_count": "0",
         }
-        print(data)
         try:
             logged = self.private_request("accounts/login/", data, login=True)
             self.authorization_data = self.parse_authorization(
