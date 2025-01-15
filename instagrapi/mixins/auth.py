@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Dict, Union
 from uuid import uuid4
 
+from lxml import html
 import requests
 from pydantic import ValidationError
 
@@ -198,6 +199,155 @@ class PostLoginFlowMixin:
 
     def solve_recaptcha(self):
 
+        print('User id: ' + str(self.user_id))
+        print("UUID: " + self.uuid)
+        print('tray_session_id: ' + self.tray_session_id)
+        print('advertising_id: ' + self.advertising_id)
+        print('android_device_id: ' + self.android_device_id)
+        print('phone_id: ' + self.phone_id)
+        input()
+
+        self.ig_www_claim = self.last_response.headers.get('x-ig-set-www-claim')
+        self.ig_u_rur = self.last_response.headers.get('ig-set-ig-u-rur')
+
+        auth_cookie = f'x-mid={self.mid}; authorization=Bearer {self.authorization.replace("Bearer ", '')}; ig-u-ds-user-id={self.user_id}; ig-u-rur={self.ig_u_rur}'
+
+
+        ''' /challenge/?next=/api/v1/zr/dual_tokens/ '''
+        headers = {
+            "User-Agent": self.user_agent,
+            "Cookie": auth_cookie,
+            'X-Requested-With': 'com.instagram.android',
+            "Upgrade-Insecure-Requests": '1',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.9'
+        }
+
+        r = requests.get('https://i.instagram.com/challenge/?next=/api/v1/zr/dual_tokens/', headers=headers)
+
+        # Parse the HTML
+        tree = html.fromstring(r.text)
+
+        # Use the XPath to find the <script> tag
+        script_element = tree.xpath('(//body[@class="loading"]/script[@type="text/javascript"])[1]')
+
+        # Extract and parse the JSON
+        if script_element:
+            script_content = script_element[0].text_content()
+            if "shared_data" in script_content:
+                json_start = script_content.find("{")
+
+                json_data = json.loads(script_content[json_start:-1])
+                csrf_token = json_data['config']['csrf_token']
+                x_instagram_ajax = json_data['rollout_hash']
+                print("CSRF Token:", csrf_token)
+            else:
+                print("shared_data not found in script content")
+        else:
+            print("No matching script element found")
+
+
+        ''' /ajax/bz?__d=dis '''        
+        
+        headers = {
+            "User-Agent": self.user_agent,
+            "Cookie": auth_cookie,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': '*/*',
+            'X-Ig-Www-Claim': '0',
+            'X-Instagram-Ajax': x_instagram_ajax,
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-Asbd-Id': '129477',
+            'X-Csrftoken': csrf_token,
+            'X-Ig-App-Id': self.app_id,
+            'Sec-Fetch-Site': 'same-origin',
+            'Sec-Fetch-Mode': 'cors',
+            'Sec-Fetch-Dest': 'empty',
+            'Referer': 'https://i.instagram.com/challenge/?next=/api/v1/zr/dual_tokens/',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Accept-Language': 'en-US,en;q=0.9'
+        }
+
+        {
+            "user":"71213359456",
+            "page_id":"6qejmq",
+            "app_id":"1217981644879628",
+            "device_id":"C78411D0-A9C2-4E44-B150-E10E4930F014",
+            "frontend_env":"prod",
+            "posts":[
+                [
+                    "ods:incr",
+                    {
+                        "key":"web.dark_mode.browser.falsy"
+                    },
+                    1736648693059,
+                    0
+                ],
+                [
+                    "ods:incr",
+                    {
+                        "key":"web.dark_mode.browser.falsy"
+                    },
+                    1736648693070,
+                    0
+                ],
+                [
+                    "ods:incr",
+                    {
+                        "key":"web.react.challenge.page.loaded"
+                    },
+                    1736648693108,
+                    0
+                ]
+            ],
+            "trigger":"falco",
+            "send_method":"ajax"
+        }
+
+        q = [
+            {
+                "user": self.user_id,
+                "page_id": "6qejmq",
+                "app_id": self.app_id,
+                "device_id": self.device_id.upper(),
+                "frontend_env":"prod",
+                "posts":[
+                    [
+                        "ods:incr",
+                        {
+                            "key":"web.dark_mode.browser.falsy"
+                        },
+                        1736648693059,
+                        0
+                    ],
+                    [
+                        "ods:incr",
+                        {
+                            "key":"web.dark_mode.browser.falsy"
+                        },
+                        1736648693070,
+                        0
+                    ],
+                    [
+                        "ods:incr",
+                        {
+                            "key":"web.react.challenge.page.loaded"
+                        },
+                        1736648693108,
+                        0
+                    ]
+                ],
+            }
+        ]
+        
+        payload = {
+            'q': '[{"user":"71213359456","page_id":"6qejmq","app_id":"1217981644879628","device_id":"C78411D0-A9C2-4E44-B150-E10E4930F014","frontend_env":"prod","posts":[["ods:incr",{"key":"web.dark_mode.browser.falsy"},1736648693059,0],["ods:incr",{"key":"web.dark_mode.browser.falsy"},1736648693070,0],["ods:incr",{"key":"web.react.challenge.page.loaded"},1736648693108,0]],"trigger":"falco","send_method":"ajax"}]'
+        }
+
+        #print()
+        #input(self.last_response.headers)
+
+        #self.ig_u_rur = f"RVA,{self.user_id},{time.time() + 31536000}:01f7f627f9ae4ce2874b2e04463efdb184340968b1b006fa88cb4cc69a942a04201e544c"
+        
         '''< GETTING AND SOLVING CAPTCHA'''
         cap_guru_api_endpoint = 'http://api2.cap.guru'
 
@@ -241,14 +391,42 @@ class PostLoginFlowMixin:
 
         '''GETTING AND SOLVING CAPTCHA >'''
 
+        headers = {
+            "User-Agent": self.user_agent,
+            "Cookie": f'x-mid={self.mid}; authorization=Bearer {self.authorization.replace("Bearer ", '')}; ig-u-ds-user-id={self.user_id}; ig-u-rur={self.ig_u_rur}',
+            "X-Ig-App-Id": self.app_id,
+            'X-Ig-Www-Claim': self.ig_www_claim,
+            "X-Instagram-Ajax": x_instagram_ajax,
+            'X-Requested-With': 'XMLHttpRequest',
+            'Referer': 'https://i.instagram.com/challenge/?next=/api/v1/zr/dual_tokens/',
+            'X-Asbd-Id': '129477',
+            'X-Csrftoken': csrf_token,
+            'X-Requested-With': 'XMLHttpRequest',
+            "Content-Type": "application/x-www-form-urlencoded",
+            "Accept": "*/*",
+            "Accept-Encoding": "gzip, deflate, br",
+            "Accept-Language": "en-US,en;q=0.9",
+            "Origin": "https://i.instagram.com",
+            "Sec-Fetch-Site": "same-origin",
+            "Sec-Fetch-Mode": "cors",
+            "Sec-Fetch-Dest": "empty"
+        }
+
+        
+
+        print()
+        input(json.dumps(headers, indent=4))
+        print()
+
         payload = {
             "g-recaptcha-response": g_recaptcha_response,
             "next": '/api/v1/zr/dual_tokens/'
         }
 
-        resp = self.private_request('challenge/web/action/', payload)
+        resp = requests.post('https://i.instagram.com/challenge/web/action/', headers=headers, data=payload, allow_redirects=False)
 
-        print(resp)
+        print()
+        input(resp.text)
 
 
     def get_timeline_feed(
@@ -501,6 +679,7 @@ class LoginMixin(PreLoginFlowMixin, PostLoginFlowMixin):
             "google_tokens": "[]",
             "login_attempt_count": "0",
         }
+        print(data)
         try:
             logged = self.private_request("accounts/login/", data, login=True)
             self.authorization_data = self.parse_authorization(
